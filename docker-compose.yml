@@ -12,11 +12,13 @@ services:
     tty: true
     
     # volumes:
-    #   -  /Users/erdem/Development/uav-llm/px4_agent:/root/px4_agent
+      # - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # - /home/user/workspace:/root/workspace
 
     environment:
       - DISPLAY=:1
-      - PX4_GZ_WORLD=default
+      # - DISPLAY=${DISPLAY}
+      # - PX4_GZ_WORLD=default
 
     ports:
       - "5901:5901"
