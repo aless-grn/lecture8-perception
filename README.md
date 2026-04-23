@@ -1,247 +1,206 @@
-# PX4-Sim
+Alessandra Gorini
 
-Fully containerized PX4 Autopilot simulation environment with browser-based GUI access.
+The link to my github repository : https://github.com/aless-grn/lecture8-perception
 
-## What's Included
+# Aufgabe 1 – Object Detection with YOLO
 
-- **PX4 Autopilot** - Pre-built and ready to use
-- **ROS 2 Jazzy** - Latest ROS 2 LTS release
-- **Gazebo Harmonic** - Latest Gazebo simulator
-- **ROS Gazebo Bridge** (`ros-jazzy-ros-gz-bridge`) - Bidirectional transport bridge between Gazebo and ROS
-- **MAVROS** (`ros-jazzy-mavros`) - PX4 to ROS gateway
-- **TigerVNC + NoVNC** - Browser-based desktop access
-- **XFCE4 Desktop** - Full desktop environment
+## Overview
 
-## Quick Start
+This project implements a perception pipeline using ROS 2 and Gazebo.
+The objective is to process a simulated RGB camera stream, perform object detection using a pretrained YOLO model, and publish the results through a custom ROS 2 message.
 
-### 1. Build the Images
+The system is integrated with a PX4 SITL simulation and uses Gazebo for the environment.
+
+---
+
+## Environment
+
+* Ubuntu (Docker container)
+* ROS 2 Jazzy
+* Gazebo Harmonic
+* PX4 SITL
+* MAVROS
+* Python 3.12
+* Ultralytics YOLOv8
+
+---
+
+## Repository Structure
+
+```
+workspace/
+├── src/
+│   ├── perception_msgs/
+│   └── perception_yolo/
+├── images/
+```
+
+---
+
+## Setup Instructions
+
+### 1. Start Docker environment
 
 ```bash
-# Build everything
-./build.sh --all
-
-# Or build step by step
-./build.sh --base  # ROS 2 + Gazebo
-./build.sh --full  # PX4 Autopilot + MAVROS + NoVNC
+cd /root/workspace
+docker compose up -d
 ```
 
-### 2. Run the Container
-
-```bash
-# Interactive mode (recommended)
-docker-compose up
-
-# Or detached mode
-docker-compose up -d
-docker attach px4_sitl
-```
-
-### 3. Access the GUI
-
-You can access GUI applications in different ways depending on your operating system:
-
-#### macOS
-
-You can access the GUI via built-in **noVNC** using your browser:
-
-- Open: http://localhost:6080/vnc.html
-- Password: `1234`
-
-#### Linux
-
-You can use **X11 forwarding** by enabling the appropriate configuration in your `docker-compose.yml` file (uncomment or add the required lines).
-
-```yaml
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-
-    environment:
-      #- DISPLAY=:1
-      - DISPLAY=${DISPLAY}
-```
-
-### 4. Control Interface
-
-You can control your vehicle in simulation using different ways:
-
-#### Connect QGroundControl (optional)
-
-This step is required only if you want to control the vehicle using a graphical user interface.
-
-1. Install **QGroundControl** on your host machine:
-   http://qgroundcontrol.com
-
-2. Create a custom communication link with the following configuration:
-
-   * Type: UDP
-   * Port: `15871`
-   * Server: `0.0.0.0:18570`
-
-3. QGroundControl will automatically connect to:
-
-   * `udp://localhost:18570`
-
-#### Offboard mode (alternative)
-
-Alternatively, you can control the vehicle in **offboard mode**. This mode bypasses certain PX4 safety constraints in **PX4 Autopilot** when running in SITL.
-
-Run the following commands in the PX4 SITL console:
-
-```bash
-param set COM_ARM_WO_GPS 1
-param set COM_RC_IN_MODE 4
-param set NAV_DLL_ACT 0
-param set NAV_RCL_ACT 0
-param set COM_OBL_ACT 0
-```
-
-### 5. Run the Simulation
-
-Requires three terminals. Start each in order and wait for it to initialize before proceeding.
-
-**Terminal 1 - PX4 SITL + Gazebo**
-
-Run PX4 SITL:
+### 2. Launch PX4 + Gazebo (Terminal 1)
 
 ```bash
 docker exec -it px4_sitl bash
 cd /root/PX4-Autopilot
-make px4_sitl gz_x500
+make px4_sitl gz_x500_depth
 ```
 
-You will see:
-- Gazebo simulation with a quadcopter
-- PX4 console showing startup messages
-- Drone ready for commands!
-
-**Terminal 2 - ROS Gazebo Bridge**
-
-Run ROS Gazebo Bridge, below is an example on how to map relevant topics of depth camera from Gazebo to ROS:
+### 3. Start ROS–Gazebo bridge (Terminal 2)
 
 ```bash
+cd /root/workspace
 docker exec -it px4_sitl bash
-ros2 run ros_gz_bridge parameter_bridge
-/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo
-/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image@sensor_msgs/msg/Image@gz.msgs.Image
-/depth_camera@sensor_msgs/msg/Image@gz.msgs.Image
-/depth_camera/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked
---ros-args
--r /world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/camera_info:=/camera/color/camera_info
--r /world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image:=/camera/color/image
--r /depth_camera:=/camera/depth/image
+ros2 run ros_gz_bridge parameter_bridge \
+/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo \
+/world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image@sensor_msgs/msg/Image@gz.msgs.Image \
+/depth_camera@sensor_msgs/msg/Image@gz.msgs.Image \
+/depth_camera/points@sensor_msgs/msg/PointCloud2@gz.msgs.PointCloudPacked \
+--ros-args \
+-r /world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/camera_info:=/camera/color/camera_info \
+-r /world/default/model/x500_depth_0/link/camera_link/sensor/IMX214/image:=/camera/color/image \
+-r /depth_camera:=/camera/depth/image \
 -r /depth_camera/points:=/camera/depth/points
 ```
 
-**Terminal 3 - MAVROS**
-
-Run MAVROS: 
+### 4. Run MAVROS
 
 ```bash
+cd /root/workspace
 docker exec -it px4_sitl bash
 ros2 launch mavros px4.launch fcu_url:=udp://:14540@localhost:14557
 ```
 
-### 6. Integrate a Local Workspace
-
-To test a custom module in PX4 SITL, you can mount your local development workspace into the Docker container as a bind volume. This allows live access to your host-side code from within the simulation environment.
-
-Add the following volume mapping to your `docker-compose.yml` file:
-
-```yaml
-    volumes:
-      - /home/user/workspace:/root/workspace
-```
-
-This binds the host directory /home/user/workspace to /root/workspace inside the container, making your module directly available to PX4 SITL without needing to rebuild the image.
-
-## Usage Examples
-
-### Start/Stop
+### 5. Build ROS workspace
 
 ```bash
-# Start (interactive)
-docker-compose up
-
-# Start (background)
-docker-compose up -d
-
-# Stop
-docker-compose down
-
-# Restart
-docker-compose restart
-
-# View logs
-docker-compose logs -f
-```
-
-### Attach/Detach
-
-```bash
-# Attach to running container
-docker attach px4_sitl
-
-# Detach without stopping: Ctrl+P, Ctrl+Q
-
-# Or use exec for new shell
-docker exec -it px4_sitl bash
-```
-
-### Multiple Terminal Windows
-
-```bash
-# Start container
-docker-compose up -d
-
-# Terminal 1: Run PX4
-docker exec -it px4_sitl bash
-cd /root/PX4-Autopilot
-make px4_sitl gz_x500
-
-# Terminal 2: Monitor ROS topics
-docker exec -it px4_sitl bash
-ros2 topic list
-ros2 topic echo /mavros/altitude
-
-# Terminal 3: Build custom packages
-docker exec -it px4_sitl bash
-cd /root/ros2_ws
+cd /root/workspace
+source /opt/ros/jazzy/setup.bash
 colcon build
+source install/setup.bash
 ```
 
-### Try Different Vehicles
+### 6. Activate Python environment
 
-See full list of vehicles [here](https://docs.px4.io/main/en/sim_gazebo_gz/vehicles).
+I had to install the YOLO dependencies in a local virtual environment which are not included in the repository because it would be too big otherwise.
+Create it with:
 
 ```bash
-# X500 Quadcopter
-make px4_sitl gz_x500
-
-# RC Cessna
-make px4_sitl gz_rc_cessna
-
-# Ackermann Rover
-make px4_sitl gz_rover_ackermann
+cd /root/workspace
+python3 -m venv yolo_venv
+source yolo_venv/bin/activate
+pip install --upgrade pip
+pip install ultralytics opencv-python "numpy<2"
 ```
 
-## Network Ports
+---
 
-| Port | Service |
-|------|---------|
-| 5901 | VNC server |
-| 6080 | NoVNC web interface |
-| 14550/udp | PX4 MAVLink (QGroundControl) |
-| 18570/udp | Local UDP port used when PX4 communicates inside container/VM setups |
+## Running the YOLO Node
 
-## Acknowledgement
+```bash
+source /opt/ros/jazzy/setup.bash
+source /root/workspace/install/setup.bash
+python /root/workspace/src/perception_yolo/perception_yolo/yolo_detector.py
+```
 
-- [PX4 Autopilot Documentation](https://docs.px4.io/)
-- [ROS 2 Jazzy Documentation](https://docs.ros.org/en/jazzy/)
-- [Gazebo Harmonic Documentation](https://gazebosim.org/docs/harmonic/)
-- [ROS Gazebo Bridge](https://github.com/gazebosim/ros_gz/tree/ros2/ros_gz_bridge)
-- [MAVROS](https://github.com/mavlink/mavros)
-- [QGroundControl](http://qgroundcontrol.com)
-- [TigerVNC Documentation](https://tigervnc.org/)
+---
 
+## Custom ROS 2 Messages
 
-**Happy Simulating!** 🚁
+### Detection.msg
+
+```
+string class_name
+float32 confidence
+int32 x_min
+int32 y_min
+int32 x_max
+int32 y_max
+```
+
+### DetectionArray.msg
+
+```
+std_msgs/Header header
+Detection[] detections
+```
+
+The detection results are published on:
+
+```
+/detections
+```
+
+---
+
+## Results
+
+The system successfully:
+
+* Subscribes to `/camera/color/image`
+* Converts images using `cv_bridge`
+* Runs YOLOv8 inference on each frame
+* Displays the camera stream with OpenCV
+* Publishes detection results as ROS 2 messages
+* Computes FPS and latency in real time
+
+### Gazebo Simulation
+
+![](workspace/images/gazebo_window.png)
+
+### YOLO Output
+
+![](workspace/images/yolo_window.png)
+
+### Visualization
+
+The output window shows:
+
+* live camera feed
+* FPS
+* inference latency
+
+---
+
+## Note
+
+The simulated environment contains simple coloredboxes. These objects are not part of the YOLO training dataset, therefore the model produces no detections.
+
+---
+
+## Performance
+
+Approximate performance:
+
+* FPS: 6–12
+* Latency: 45–80 ms per frame
+
+---
+
+## Verification
+
+Check detection topic:
+
+```bash
+ros2 topic echo /detections
+```
+
+Check camera topic:
+
+```bash
+ros2 topic echo /camera/color/image
+```
+
+---
+
+## Problems
+
+I had a lot of problems setting up the project which took me a lot of time to solve. I also  had to debug some problems with python and numpy in the container, because some packagescouldn't be installed and to use one package I had to have a less recent version of numpy.
